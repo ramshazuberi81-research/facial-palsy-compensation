@@ -62,9 +62,5 @@ No images or patient data are in this repo, and `.gitignore` blocks the usual da
 ## Citation and credits
 
 - ParFace: J. M. Díaz Barros et al., *In-Domain Inversion for Improved 3D Face Alignment on Asymmetrical Expressions*, FG 2024. Dataset available from the authors for research use.
-- Toronto NeuroFace: A. Bandini et al., *A New Dataset for Facial Motion Analysis in Individuals With Neurological Disorders*, IEEE JBHI 25(4), 2021. Access by request.
 - Landmarks: MediaPipe Face Landmarker.
 
-## License
-
-MIT for the code (see `LICENSE`). Datasets keep their own terms.
