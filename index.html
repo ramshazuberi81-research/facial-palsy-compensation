@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face symmetry check</title>
+<style>
+:root{--bg:#f7f7f5;--fg:#1c1c1a;--mut:#6b6b66;--card:#fff;--bd:#dcdcd6;--ac:#0f6e56;--wa:#b4530a}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#161615;--fg:#ececE8;--mut:#9a9a93;--card:#222220;--bd:#3a3a36;--ac:#5dcaa5;--wa:#f0a060}}
+body{margin:0;font:16px/1.5 system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg)}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:1.35rem;margin:.2em 0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin:12px 0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+button,select,label.btn{font:inherit;padding:9px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+button:disabled{opacity:.5}
+video,canvas{max-width:100%;height:auto;border-radius:8px}
+.th{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mut{color:var(--mut);font-size:.88rem}
+.warn{color:var(--wa)}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);font-size:.93rem}
+.flag{color:var(--wa);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Face symmetry check</h1>
+<p class="mut">Photos are analysed in your browser and are not uploaded anywhere.</p>
+
+<div class="card" style="border-color:var(--wa)">
+<strong>Not a diagnosis.</strong> If a face droop, arm weakness or speech trouble started suddenly, seek emergency care now. Normal faces are also slightly asymmetric.
+</div>
+
+<div class="card">
+<div class="row"><b>1. Choose what you are capturing</b></div>
+<div class="row">
+<select id="slot"><option value="neutral">Neutral (relaxed face)</option><option value="action">Peak action (e.g. big smile)</option></select>
+<select id="ps"><option value="">Palsy side: unknown</option><option value="L">Palsy side: subject&rsquo;s left</option><option value="R">Palsy side: subject&rsquo;s right</option></select>
+<label><input type="checkbox" id="mir"> image is mirrored</label>
+</div>
+<div class="row"><b>2. Take or upload a photo</b></div>
+<div class="row">
+<button id="cam">Open camera</button>
+<button id="cap" class="p" disabled>Capture</button>
+<label class="btn">Upload photo<input id="up" type="file" accept="image/*" hidden></label>
+<button id="rs">Reset</button>
+</div>
+<video id="v" playsinline autoplay muted hidden></video>
+<p id="st" class="mut">Loading face model&hellip;</p>
+<p class="mut">Face the camera, eyes level, even light, 30&ndash;60 cm away. Use the same distance for both photos. The preview is not mirrored, so the subject&rsquo;s right appears on the left of the image.</p>
+</div>
+
+<div class="card"><div class="th"><div id="th_neutral" class="mut">Neutral: none yet</div><div id="th_action" class="mut">Peak action: none yet</div></div></div>
+
+<div class="card">
+<b>Measurements</b>
+<div class="tw"><table id="tb"></table></div>
+<p id="notes" class="mut"></p>
+</div>
+
+<p class="mut">Values are in inter-pupillary-distance (IPD) units. With one photo you get static left/right differences. With neutral and peak photos you also get movement per side and an asymmetry index, (healthy &minus; palsy) &divide; (healthy + palsy) when the palsy side is set, otherwise |R &minus; L| &divide; (R + L). Flag threshold 0.15 is a provisional value, not validated. Compensation versus a healthy norm is not shown: it needs validated control data.</p>
+</main>
+
+<script type="module">
+import {FaceLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+const $=id=>document.getElementById(id);
+let lm=null;const shots={neutral:null,action:null};
+const S={R:{c:61,b:105,u:159,l:145,i:468,g:-1},L:{c:291,b:334,u:386,l:374,i:473,g:1}};
+const F=[['brow','Brow raise (frontalis)'],['eye','Eye opening (orbicularis oculi)'],['mouth_up','Mouth corner lift (zygomaticus)'],['mouth_out','Mouth corner width (risorius)']];
+const T=0.15,YAW=0.12;
+
+(async()=>{try{
+  const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  lm=await FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"},runningMode:"IMAGE",numFaces:1});
+  $('st').textContent='Ready.';
+}catch(e){$('st').textContent='Could not load the face model: '+e.message}})();
+
+function analyze(cv){
+  const r=lm.detect(cv); if(!r.faceLandmarks.length) return null;
+  const w=cv.width,h=cv.height,P=r.faceLandmarks[0].map(p=>[p.x*w,p.y*h]);
+  const yaw=(P[1][0]-(P[234][0]+P[454][0])/2)/Math.abs(P[454][0]-P[234][0]);
+  const a=P[468],b=P[473],c=[(a[0]+b[0])/2,(a[1]+b[1])/2],ipd=Math.hypot(b[0]-a[0],b[1]-a[1]);
+  const t=-Math.atan2(b[1]-a[1],b[0]-a[0]),co=Math.cos(t),si=Math.sin(t);
+  const n=P.map(p=>{const x=p[0]-c[0],y=p[1]-c[1];return[(co*x-si*y)/ipd,(si*x+co*y)/ipd]});
+  const f={yaw,P};
+  for(const s in S){const d=S[s];
+    f['mouth_up_'+s]=-(n[d.c][1]-n[1][1]);
+    f['mouth_out_'+s]=d.g*(n[d.c][0]-n[1][0]);
+    f['brow_'+s]=n[d.i][1]-n[d.b][1];
+    f['eye_'+s]=Math.abs(n[d.u][1]-n[d.l][1]);}
+  return f;
+}
+
+function setShot(cv){
+  if(!lm){$('st').textContent='Model still loading, try again in a moment.';return}
+  const slot=$('slot').value,box=$('th_'+slot),label=slot==='neutral'?'Neutral':'Peak action';
+  const f=analyze(cv); box.innerHTML='';
+  if(!f){shots[slot]=null;box.textContent=label+': no face found. Retake.';render();return}
+  shots[slot]=f;
+  const d=document.createElement('canvas');d.width=cv.width;d.height=cv.height;
+  const x=d.getContext('2d');x.drawImage(cv,0,0);x.fillStyle='#e24b4a';
+  for(const i of [468,473,61,291,105,334,159,145,386,374,1]){x.beginPath();x.arc(f.P[i][0],f.P[i][1],Math.max(2,cv.width/180),0,7);x.fill()}
+  box.append(label,d);
+  if(Math.abs(f.yaw)>YAW){const w=document.createElement('div');w.className='warn';w.textContent='Head is turned. Retake facing the camera.';box.append(w)}
+  render();
+}
+
+function render(){
+  const n=shots.neutral,a=shots.action,ps=$('ps').value,sw=$('mir').checked;
+  const g=(f,k,s)=>f[k+'_'+(sw?(s==='R'?'L':'R'):s)];
+  const move=n&&a,src=n||a;
+  if(!src){$('tb').innerHTML='';$('notes').textContent='';return}
+  let h='<tr><th>Measure</th><th>'+(move?'Move R':'Right')+'</th><th>'+(move?'Move L':'Left')+'</th><th>'+(move?'Asymmetry':'R &minus; L (% IPD)')+'</th></tr>';
+  const top=[];
+  for(const [k,name] of F){
+    let R,L,cell,fl=false;
+    if(move){
+      R=Math.abs(g(a,k,'R')-g(n,k,'R'));L=Math.abs(g(a,k,'L')-g(n,k,'L'));
+      if(R+L<0.02) cell='movement too small';
+      else{
+        const hl=ps==='L'?R:ps==='R'?L:null,pl=ps==='L'?L:ps==='R'?R:null;
+        const v=ps?(hl-pl)/(hl+pl):Math.abs(R-L)/(R+L);
+        fl=Math.abs(v)>T;cell=(ps&&v>0?'+':'')+v.toFixed(2);if(fl)top.push(name);
+      }
+    }else{R=g(src,k,'R');L=g(src,k,'L');cell=((R-L)*100).toFixed(1);}
+    h+='<tr><td>'+name+'</td><td>'+R.toFixed(3)+'</td><td>'+L.toFixed(3)+'</td><td class="'+(fl?'flag':'')+'">'+cell+(fl?' &#9873;':'')+'</td></tr>';
+  }
+  $('tb').innerHTML=h;
+  $('notes').textContent=move
+    ?(top.length?'Larger left/right differences in: '+top.join(', ')+'. Interpret with a clinician; thresholds are provisional.':'No region exceeds the provisional 0.15 asymmetry threshold.')
+    :'Add a peak-action photo (e.g. a big smile) to measure movement on each side.';
+}
+
+$('cam').onclick=async()=>{try{
+  const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280}},audio:false});
+  $('v').srcObject=s;$('v').hidden=false;$('cap').disabled=false;
+}catch(e){$('st').textContent='Camera unavailable ('+e.message+'). Use Upload instead.'}};
+$('cap').onclick=()=>{const v=$('v'),c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);setShot(c)};
+$('up').onchange=e=>{const fl=e.target.files[0];if(!fl)return;const im=new Image();
+  im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(im.src);setShot(c)};
+  im.src=URL.createObjectURL(fl);e.target.value=''};
+$('rs').onclick=()=>{shots.neutral=shots.action=null;$('th_neutral').textContent='Neutral: none yet';$('th_action').textContent='Peak action: none yet';render()};
+$('ps').onchange=$('mir').onchange=render;
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+mediapipe
+opencv-python-headless
+numpy
+pandas
+matplotlib
+scipy
+scikit-learn
+tqdm
+notebook

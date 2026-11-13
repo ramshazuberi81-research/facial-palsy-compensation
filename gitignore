@@ -1,0 +1,17 @@
+# data and labels: never commit
+ParFace/
+ParFace_outputs/
+NeuroFace/
+data/
+*.zip
+meta.csv
+author_labels.csv
+frame_features.csv
+video_features.csv
+side_suggestions_CHECK_ONLY.csv
+face_landmarker.task
+# python / notebooks
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.DS_Store
